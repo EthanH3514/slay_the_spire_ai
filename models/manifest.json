@@ -1,0 +1,41 @@
+{
+  "combat_round": 66,
+  "outside_generation": 15,
+  "files": {
+    "prior": {
+      "file": "prior.json",
+      "sha256": "4242787ad62e22792684ab0f832461eba3e1c748446b108a700e87d5058bc187",
+      "source_sha256": "4242787ad62e22792684ab0f832461eba3e1c748446b108a700e87d5058bc187"
+    },
+    "value": {
+      "file": "value.json",
+      "sha256": "e9cbc03bf48a6f3684dbc81218bf43a9b010193585cd436c2404df0e519103f2",
+      "source_sha256": "c055062df0845d9ef993acedafc2373909f72db6ef76e9040dfa66ac57cb10c6"
+    },
+    "continuation": {
+      "file": "continuation.json",
+      "sha256": "2f42adc1955de69ada9354e1cb0161a84f27e2179fd26e7e77bc4bde77f15cde",
+      "source_sha256": "2f42adc1955de69ada9354e1cb0161a84f27e2179fd26e7e77bc4bde77f15cde"
+    },
+    "construction": {
+      "file": "construction.pt",
+      "sha256": "a97df2b3a77dfa60ae4865df5388a74fd4d4a729a399678aeb272dac90114d37",
+      "source_sha256": "b027aa6ad351c6e7a2d53e301c1f3bce31ee7ae303ebc6f48aa627145cfd3489"
+    },
+    "base": {
+      "file": "base.pt",
+      "sha256": "4dd06e6d1d96cfca904eed0c38bf1a7db798dd3c02fb75bca4792bbd3112db67",
+      "source_sha256": "dda3c9f1668e5bfcd56a3fcb2d458af36dac1aea9d5db8afd7e758f2be8685f1"
+    },
+    "event": {
+      "file": "event.pt",
+      "sha256": "aebc4d03c7e306aa689c1076bfbf1c7eeb48d13cf7efc95b639f7e9a7be6f10c",
+      "source_sha256": "4c4a838e5554ed1e171869d793a4980b16475f0b2861f0f233b51b81405a3c30"
+    },
+    "boss": {
+      "file": "boss.pt",
+      "sha256": "a3f91edddf7b6c95a7995567d1d787929aa4449327ed281c9de26ecc3a62ca9b",
+      "source_sha256": "0bb372423dc921d0cde5740eb779d5a715f0258671f2231da480670bd54a1f2f"
+    }
+  }
+}

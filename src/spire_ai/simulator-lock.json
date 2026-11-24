@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "repository": "https://github.com/EthanH3514/sts_lightspeed.git",
+  "branch": "master",
+  "revision": "a738d336f24ec75c754168b8cefa7ee19ca591d3",
+  "publication_status": "published",
+  "last_published_revision": "a738d336f24ec75c754168b8cefa7ee19ca591d3",
+  "upstream_repository": "https://github.com/gamerpuppy/sts_lightspeed.git",
+  "upstream_revision": "7476a81954020087da31d41d16fddf475746ec2d",
+  "dependencies": {
+    "json": {
+      "repository": "https://github.com/nlohmann/json",
+      "revision": "aa391dc0a56f8409e2e7aca6e7c9a9d766d44ce8"
+    },
+    "pybind11": {
+      "repository": "https://github.com/pybind/pybind11.git",
+      "revision": "5b859901d8e6f1e8a2fce927d29b0f04d8a157f1"
+    }
+  }
+}
