@@ -12,6 +12,23 @@ in the development workspace.
 
 ## Research approach
 
+### How a decision reaches the simulator
+
+```mermaid
+flowchart TD
+    simulator["Headless simulator"] --> observation["Public state and legal actions"]
+    observation --> decision{"Current decision"}
+    decision -->|Combat| combat["Conditional sampling and PUCT search"]
+    decision -->|Map| route["Route policy"]
+    decision -->|Rewards, shop, campfire| deck["Deck-building policy"]
+    decision -->|Events and boss relics| event["Event search or specialist policy"]
+    combat --> execute["Apply the chosen action or sequence"]
+    route --> execute
+    deck --> execute
+    event --> execute
+    execute --> simulator
+```
+
 ### Combat with hidden information
 
 The combat policy takes inspiration from AlphaZero. A learned policy guides

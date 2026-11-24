@@ -51,3 +51,5 @@ model artifacts or the simulator pin.
   12-action smoke with the same actions and public-state fingerprints.
 - Edited both public READMEs for clarity and aligned their descriptions of
   the combat search, training objectives, evaluation results and setup.
+- Added matching Mermaid diagrams of the simulator decision loop to the
+  English and Chinese READMEs.

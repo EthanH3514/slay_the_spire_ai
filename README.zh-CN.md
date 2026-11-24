@@ -9,6 +9,23 @@ Spire AI 是一个实验性的《杀戮尖塔》AI。项目目标是用铁甲战
 
 ## 算法思路
 
+### 对局决策流程
+
+```mermaid
+flowchart TD
+    simulator["无界面模拟器"] --> observation["公开状态和合法动作"]
+    observation --> decision{"当前决策类型"}
+    decision -->|战斗| combat["条件采样与 PUCT 搜索"]
+    decision -->|地图| route["路线策略"]
+    decision -->|战后奖励、商店、营火| deck["卡组构筑策略"]
+    decision -->|事件与首领遗物| event["事件搜索或专项策略"]
+    combat --> execute["执行选定的动作或动作序列"]
+    route --> execute
+    deck --> execute
+    event --> execute
+    execute --> simulator
+```
+
 ### 战斗中的不完全信息搜索
 
 战斗策略受 AlphaZero 启发，用策略模型引导蒙特卡洛树搜索，用估值模型评价叶节点。
