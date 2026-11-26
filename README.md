@@ -96,9 +96,13 @@ The table shows results for the released policies on 32 A10 Ironclad seeds.
 | Cleared Act 2 | 0/32 |
 | Cleared the ordinary three-act run | 0/32 |
 
-In a separate evaluation from fixed combat positions, the combat policy won
-**38 of 52** fights. The full-run results leave performance in the later acts
-largely unmeasured.
+The combat policy performed reasonably well on fixed battle positions,
+winning **38 of 52** fights. Full-run performance is still limited.
+
+I suspect that decisions between battles, especially deck building and
+route choice, are the main bottleneck. That hypothesis still needs a
+controlled comparison. I have limited time to pursue further improvements
+to those policies at the moment.
 
 - **Combat value.** The value model uses a compact public representation.
   Detailed uncertainty about card order is handled by the sampler, and the
