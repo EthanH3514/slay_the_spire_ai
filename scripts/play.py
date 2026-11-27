@@ -46,13 +46,16 @@ def load(path):
 
 
 class Combat:
-    def __init__(self, environment, files):
+    def __init__(self, environment, files, weights=None):
         self.module = environment.module
         # The native interface uses these identifiers to associate the model bindings.
         model_ids = {name: files[name]["sha256"] for name in ("prior", "value", "continuation")}
         actor = read(MODELS / files["continuation"]["file"])
         prior = read(MODELS / files["prior"]["file"])
         value = read(MODELS / files["value"]["file"])
+        if weights is not None:
+            prior, value = weights
+            model_ids.update(prior=digest(prior), value=digest(value))
         self.module.cold_bind(json.dumps(actor), json.dumps(actor["schema"]), model_ids["continuation"])
         self.module.neural_prior_bind(json.dumps(prior), json.dumps(prior["schema"]),
             digest(actor), model_ids["prior"], model_ids["continuation"])
@@ -112,10 +115,10 @@ def choose_base(public, supplement, encoder, model, _candidate, *, eligible, arm
 
 
 class FrozenPolicy:
-    def __init__(self, module_dir):
+    def __init__(self, module_dir, *, construction_state=None, combat_weights=None):
         manifest = read(MODELS / "manifest.json")
         files = manifest["files"]
-        saved = load(MODELS / files["construction"]["file"])
+        saved = construction_state if construction_state is not None else load(MODELS / files["construction"]["file"])
         self.construction = policy_from_checkpoint(saved)
         self.learner = ConstructionLearner(self.construction,
             config=TrainingConfig(**saved["config"]), startup_enabled=saved["startup_enabled"],
@@ -139,9 +142,23 @@ class FrozenPolicy:
             MODELS / files["event"]["file"], MODELS / files["boss"]["file"],
             self.construction, encoder, base_model, choose_base)
         self.event_value = ConstructionEventValue(self.construction.encoder, self.construction.model,
-            objective=saved["objective"], checkpoint_sha256=files["construction"]["sha256"])
+            objective=saved["objective"], checkpoint_sha256=(
+                state_hash(self.construction.model) if construction_state is not None else files["construction"]["sha256"]))
         self.environment = LocalEventEnvironment(self.construction.encoder, module_dir=module_dir)
-        self.combat = Combat(self.environment, files)
+        self.combat = Combat(self.environment, files, combat_weights)
+
+    def choose_combat(self, public):
+        return self.combat.choose(public)
+
+    def choose_construction(self, menu, generator):
+        with torch.no_grad():
+            dist, _ = self.learner.distribution(self.learner.cache(menu))
+            return int(torch.multinomial(dist.probs, 1, generator=generator))
+
+    def choose_route(self, public, supplement, generator):
+        action, _ = sample_route(public, supplement, self.route_encoder, self.route_model,
+                                 generator=generator, behavior_id=self.route_identity)
+        return action
 
     def play(self, seed, outside_seed, construction_seed, max_actions, on_action):
         env = self.environment
@@ -171,7 +188,7 @@ class FrozenPolicy:
                 if actions >= max_actions:
                     raise ActionLimit
                 if HierarchicalPolicy.specialist_for(public).value == "combat":
-                    take(self.combat.choose(public))
+                    take(self.choose_combat(public))
                     continue
                 if eligibility(public) is None:
                     plan = search(env, self.event_value, scorer_version=self.event_value.version,
@@ -184,14 +201,9 @@ class FrozenPolicy:
                 menu = self.construction.menu(public, supplement=supplement, shelf=shelf,
                                               reward_eligible=eligible)
                 if menu is not None:
-                    with torch.no_grad():
-                        dist, _ = self.learner.distribution(self.learner.cache(menu))
-                        selected = int(torch.multinomial(dist.probs, 1, generator=construction_rng))
-                    execute(env, menu, selected, take=take)
+                    execute(env, menu, self.choose_construction(menu, construction_rng), take=take)
                 elif screen == "MAP":
-                    action, _ = sample_route(public, supplement, self.route_encoder, self.route_model,
-                                             generator=outside_rng, behavior_id=self.route_identity)
-                    take(action)
+                    take(self.choose_route(public, supplement, outside_rng))
                 else:
                     action, _ = self.outside.choose(public, supplement, rng=outside_rng)
                     take(action)
