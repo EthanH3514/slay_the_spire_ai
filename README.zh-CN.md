@@ -2,96 +2,28 @@
 
 [English](README.md) · 简体中文
 
-Spire AI 是一个实验性的《杀戮尖塔》AI。项目目标是用铁甲战士打通进阶 10（A10）的普通三幕，
-战斗只根据公开信息决策，期间不读档（no SL）。本仓库提供在无界面模拟器中运行的推理代码
-和训练好的战斗、局外模型权重。下文介绍训练方法和评估结果。完整训练流程和训练数据留在
-开发工作区。
+Spire AI 是一个在无界面模拟器里玩《杀戮尖塔》的 AI。它能在一局中打战斗、选牌、
+选路线，也会处理商店、营火和事件。项目目标是用铁甲战士击败进阶 10（A10）的
+第三幕首领。战斗决策只使用玩家能看到的信息，战斗全程不读档（no SL）。
 
-## 算法思路
+仓库提供模拟器运行入口、决策代码和训练好的模型权重。完整训练流程和数据留在开发工作区。
 
-### 对局决策流程
+## 发布版表现
 
-```mermaid
-flowchart TD
-    simulator["无界面模拟器"] --> observation["公开状态和合法动作"]
-    observation --> decision{"当前决策类型"}
-    decision -->|战斗| combat["条件采样与 PUCT 搜索"]
-    decision -->|地图| route["路线策略"]
-    decision -->|战后奖励、商店、营火| deck["卡组构筑策略"]
-    decision -->|事件与首领遗物| event["事件搜索或专项策略"]
-    combat --> execute["执行选定的动作或动作序列"]
-    route --> execute
-    deck --> execute
-    event --> execute
-    execute --> simulator
-```
+| 模拟器评估 | 结果 |
+| --- | --- |
+| 用铁甲战士在 32 个 A10 种子上从头打 | 11 局通过第一幕，2 局到达第二幕首领，0 局通过第二幕或通关 |
+| 从 52 个固定战斗局面开始，只打当前这一场 | 赢了 38 场 |
 
-### 战斗中的不完全信息搜索
-
-战斗策略受 AlphaZero 启发，用策略模型引导蒙特卡洛树搜索，用估值模型评价叶节点。
-为处理《杀戮尖塔》的隐藏信息，搜索会采样多种符合玩家已知信息的局面。
-[AlphaZero 论文](https://discovery.ucl.ac.uk/id/eprint/10069050/)
-
-1. **根据公开线索采样。** 真实游戏种子和抽牌顺序由模拟器持有。搜索利用已抽出的牌、
-   被放到牌堆顶或底的牌等公开线索。对已支持的洗牌和插牌机制，采样器记录这些操作带来的
-   牌序约束，再按条件概率生成可能的牌序。抽到一张同名牌时，如果几张副本都符合观察，
-   采样器会考虑每种可能。[公开状态接口](src/spire_ai/policy_api.py) ·
-   [抽牌条件采样](native/combat_search/ObservedDrawPrefix.h)
-2. **在树中向前模拟多步。** C++ 搜索用 PUCT 根据动作先验和已有模拟结果分配访问次数。
-   如果不同样本经历了相同的动作和公开观察，它们就共享树节点的统计。模拟打到战斗结束时，
-   搜索回传该次模拟的终局结果。到达非终局叶节点时，`value` 模型估计输、赢和逃跑的概率，
-   以及战斗结束时剩余资源的分布。资源评分包含血量和对剩余药水的估价。
-   [搜索树](native/combat_search/StandaloneTree.h) · [叶节点估值](native/combat_search/ValueLeaf.h)
-3. **执行一步，再重新搜索。** 通常选择完成模拟次数最多的根动作，次数相同时比较胜负和
-   资源估计。如果仅凭公开状态就能证明某个出牌顺序可以保住血量和药水并赢下战斗，
-   搜索可以直接选它的第一步。每次决策最多完成 1,024 次模拟，累计最多执行 16,384 个
-   模拟器动作步。动作执行后，策略根据实际观察到的新局面重新搜索。
-   [根动作选择](scripts/root_recommendation.py) · [终局证明](native/combat_search/TerminalProof.h)
-
-### 战斗和局外策略如何学习
-
-- **战斗训练。** 动作先验学习树搜索的访问次数分布。训练估值模型时，用一套固定的战斗策略
-  将采样局面打到结束，记录终局结果和剩余资源。每轮训练可以从已有的公开局面出发，
-  用当轮固定的策略重新生成训练目标。
-- **构筑与路线。** 先用人类对局中能够还原的决策做离线初始化。构筑策略用同一套模型评价
-  战后选牌、商店和营火的选项。路线由另一个策略负责，它根据公开的对局状态和路线特征，
-  在合法出口中按概率选择。联合 PPO 训练以实际通关进度为奖励，通过第一、第二、第三幕
-  分别加 1、2、3 分，让开局的选择也能从后续表现中学习。
-  [构筑策略](src/spire_ai/construction_policy.py) · [路线策略](src/spire_ai/route_behavior.py)
-- **事件。** 对符合条件的非战斗事件，模拟器可以回到同一个入口状态比较各个选项。
-  构筑的估值模型用各分支结束时的公开状态打分。可能触发战斗的事件从进入到结束都按
-  正常对局推进。[事件适用范围和搜索](src/spire_ai/local_event_search.py) ·
-  [事件出口估值](src/spire_ai/local_event_value.py)
-
-## 研究进展与不足
-
-下表记录发布版策略在 32 个 A10 铁甲战士种子上的表现。
-
-| 结果 | 对局数 |
-| --- | ---: |
-| 通过第一幕 | 11/32 |
-| 到达第二幕首领 | 2/32 |
-| 通过第二幕 | 0/32 |
-| 普通三幕通关 | 0/32 |
-
-战斗策略在固定局面上的表现还不错，赢了 **52 场中的 38 场**。整局表现仍然有限。
-
-我推测，卡组构筑和路线选择等局外决策很可能是当前的主要瓶颈。这个判断还需要
-用对照实验验证，近期也没有足够精力继续优化局外策略。
-
-- **战斗估值。** 估值模型用简化的公开状态作为输入。牌序的不确定性由搜索的采样器处理，
-  剩余药水的价值仍靠近似估算。
-- **路线评估。** 从第二幕末段的 19 个岔路续打了 78 次，每次只改变第一个出口，后续
-  使用固定策略。有 5 个岔路的出口选择会影响到达首领的次数，只有 1 个会影响击败首领的
-  次数。能区分路线优劣的样本还太少，完整地图路线模型的训练尚未启动。
-- **覆盖范围。** 后期对局和配合成型的卡组局面仍然偏少。模拟器遇到暂未支持的机制时，
-  运行过程可能会报错终止。
+整局测试从开局开始，战斗、构筑、路线等策略都参与决策。单场测试从预先准备好的战斗局面
+开始，只测战斗策略。我推测选牌构筑和路线等局外决策是当前的主要瓶颈，这还需要对照实验
+验证。我近期能投入这部分优化的时间有限。
 
 ## 快速开始
 
 已验证环境为 64 位 Windows、Python 3.11、CPU 版 PyTorch、MinGW-w64 GCC 13、
-CMake 3.27 和 Ninja。将 Git、CMake、Ninja 和 MinGW 工具链加入 `PATH` 后，
-在仓库根目录打开 PowerShell 并运行以下命令。
+CMake 3.27 和 Ninja。将 Git、CMake、Ninja 和 MinGW 加入 `PATH`，然后在仓库根目录
+打开 PowerShell，执行下面的命令。模拟器可以独立于 Steam 运行。
 
 ```powershell
 python -m venv runtime/venv
@@ -99,31 +31,106 @@ $python = "runtime/venv/Scripts/python.exe"
 & $python -m pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
 & $python scripts/build_native.py --jobs 4
 & $python scripts/play.py --max-actions 12
+```
+
+如果 `sts_lightspeed/` 子模块及其依赖都已初始化到锁定版本，构建脚本会直接复用。
+可以运行 `git submodule update --init --recursive` 初始化。否则构建脚本会使用
+`runtime/sts_lightspeed`，需要时自动下载。编译产物放在 `runtime/native`。
+也可以给 `scripts/build_native.py` 传入 `--source <path>`，使用指定目录中的锁定版本源码和依赖。
+[模拟器版本锁定文件](src/spire_ai/simulator-lock.json)
+
+试跑会为每个动作输出一行 JSON，最后输出 `{"actions": 12, "outcome": "action_limit"}`。
+要从开局跑完整一局，可以执行下面的命令，最后一行会给出对局结果。
+
+```powershell
 & $python scripts/play.py --seed 20261125
 ```
 
-构建脚本会获取指定版本的模拟器和依赖，并将编译后的模块放在 `runtime/native`。
-如果已有对应版本的源码和子模块，可用 `scripts/build_native.py --source <path>`
-离线构建。模拟器独立于 Steam 运行。[模拟器版本锁定文件](src/spire_ai/simulator-lock.json)
+## AI 怎么做决策
 
-12 步试跑会用 JSON 逐行输出每一步选择的动作和执行后的公开状态指纹，最后报告
-`action_limit`。整局结束时，最后一行会给出模拟器判定的结果。
+```mermaid
+flowchart TD
+    simulator["无界面模拟器"] --> observation["可见游戏状态和合法动作"]
+    observation --> decision{"当前画面"}
+    decision -->|战斗| combat["采样可能的抽牌结果并搜索动作"]
+    decision -->|地图| route["选择路线"]
+    decision -->|战后奖励、商店、营火| deck["给构筑选项打分"]
+    decision -->|事件与首领遗物| event["比较事件结果或调用专项策略"]
+    combat --> execute["执行选定的动作或动作序列"]
+    route --> execute
+    deck --> execute
+    event --> execute
+    execute --> simulator
+```
+
+### 战斗
+
+战斗策略受 AlphaZero 启发。一个模型引导蒙特卡洛树搜索优先尝试看起来较好的动作，另一个
+模型在模拟未打到底时估计结果。《杀戮尖塔》还多了一层隐藏信息，比如不知道下一张会抽到什么。
+[AlphaZero 论文](https://discovery.ucl.ac.uk/id/eprint/10069050/)
+
+1. **采样可能的未来。** 如果已知抽牌堆顶是什么，每个样本都会把这张牌放在顶上，再根据
+   其他公开线索生成未知的牌序。采样器会跟踪已支持的牌堆操作带来的约束，也会考虑同名牌的
+   多个副本。实际的隐藏牌序和游戏种子由模拟器保管，战斗搜索无法读取。
+   [公开状态接口](src/spire_ai/policy_api.py) · [牌序采样](native/combat_search/ObservedDrawPrefix.h)
+2. **在多个样本里尝试合法动作。** C++ 搜索用 PUCT 根据模型推荐和已有结果分配访问次数。
+   如果模拟经历了相同的动作和可见结果，就共享树里的统计。打到战斗结束时，搜索用实际结果
+   更新统计；模拟提前停止时，由估值模型预测输、赢和逃跑的概率，以及可能剩下多少血量和药水价值。
+   [搜索树](native/combat_search/StandaloneTree.h) · [估值模型](native/combat_search/ValueLeaf.h)
+3. **执行一步，再根据看到的结果搜索。** 通常选择访问次数最多的动作。每次决策最多做
+   1,024 次模拟、执行 16,384 个模拟动作。如果仅凭可见信息就能证明某个动作序列可以保住
+   血量和药水并赢下战斗，也可以直接执行它的第一步。
+   [动作选择](scripts/root_recommendation.py) · [终局证明](native/combat_search/TerminalProof.h)
+
+### 战斗之外
+
+- **卡组构筑。** 战后拿牌或跳过、在商店购买或删牌、在营火休息或升级，都用同一个构筑
+  模型给选项打分。[构筑策略](src/spire_ai/construction_policy.py)
+- **路线选择。** 单独的路线模型根据当前局面和路线特征为每个可走的出口分配概率，再按
+  概率选一个出口。[路线策略](src/spire_ai/route_behavior.py)
+- **事件选择。** 对符合条件且不会触发战斗的事件，模拟器可以从同一个入口状态重放不同
+  选项，包括复用该事件起点的随机状态。构筑的估值模型比较各选项产生的可见结果。可能
+  触发战斗的事件按正常对局推进。[事件搜索](src/spire_ai/local_event_search.py) ·
+  [事件估值](src/spire_ai/local_event_value.py)
+
+## 策略是怎么训练的
+
+**战斗。** 负责推荐动作的模型也叫动作先验，它学习树搜索对各个合法动作的访问次数分布。
+估值模型从打到底的战斗中学习。训练时用固定的战斗策略从采样局面出发，打完后记录终局
+结果和剩余资源。后续轮次可以复用保存的公开局面，用该轮固定的战斗策略为两个模型
+重新生成训练目标。
+
+**局外。** 先从公开的《杀戮尖塔》玩家对局记录中提取能够还原的选择，做模仿学习。随后
+固定战斗策略，在模拟器里生成新的整局轨迹，用 PPO（近端策略优化）更新卡组构筑和路线模型。
+通过第一、第二、第三幕时分别追加 1、2、3 分，让开局的选牌和路线也能收到后续进度的反馈。
+[人类对局数据来源](THIRD_PARTY_NOTICES.md)
+
+## 当前限制与后续训练
+
+- **先改进构筑和路线。** 我会优先用整局结果检验构筑和路线的改动，期间固定战斗策略。路线
+  模型的一个方向是传入整张后续可达地图，保留路径的分叉和汇合。从同一岔路走不同出口，
+  后续策略固定，就能比较第一步选了不同路线会带来多大差别。
+- **再补后期和成型卡组的战斗。** 目前第二、第三幕以及卡组配合成型的战斗数据较少。可以
+  从新对局里采集这些局面，训练战斗模型发挥局外策略构筑的卡组。战斗估值对剩余药水的价值
+  也仍是近似的。
+- **模拟器覆盖。** 对局遇到暂未支持的机制时，运行可能报错终止。
+
+后续对照可以在留出的种子和相同战斗搜索预算下，每次比较一项策略改动。用各幕通过率和
+三幕通关率衡量进展，再用失血和药水消耗解释结果差异。
 
 ## 主要策略入口
 
-| 决策 | 代码入口 | 职责 |
-| --- | --- | --- |
-| 整局调度 | [`FrozenPolicy.play`](scripts/play.py) | 按当前画面调用对应的冻结策略，执行动作并推进模拟器。 |
-| 战斗 | [`Combat.choose`](scripts/play.py)、[根动作推荐](scripts/root_recommendation.py)、[C++ 搜索树](native/combat_search/StandaloneTree.h) | 应用药水替换限制，调用搜索并校验最终推荐。 |
-| 路线 | [`sample_route`](src/spire_ai/route_behavior.py) | 编码公开路线信息，按冻结模型的概率分布采样一个合法出口。 |
-| 卡组构筑 | [`ConstructionPolicy`](src/spire_ai/construction_policy.py) | 为战后选牌、商店和营火构建选项并打分。 |
-| 事件和首领遗物 | [事件搜索](src/spire_ai/local_event_search.py)、[局外策略调度](src/spire_ai/canonical_event_dispatch.py) | 搜索符合条件的纯选择事件，并调度其余事件和首领遗物选择。 |
+| 决策 | 代码入口 |
+| --- | --- |
+| 整局调度 | [`FrozenPolicy.play`](scripts/play.py) |
+| 战斗 | [`Combat.choose`](scripts/play.py)、[C++ 搜索树](native/combat_search/StandaloneTree.h) |
+| 路线 | [`sample_route`](src/spire_ai/route_behavior.py) |
+| 卡组构筑 | [`ConstructionPolicy`](src/spire_ai/construction_policy.py) |
+| 事件和首领遗物 | [事件搜索](src/spire_ai/local_event_search.py)、[专项策略](src/spire_ai/canonical_event_dispatch.py) |
 
-`scripts/build_native.py` 和 `scripts/play.py` 是命令行入口。`scripts/` 也包含运行适配
-和校验模块。`src/spire_ai/` 放可复用的 Python 策略、模拟器环境和公开状态组件。
+`scripts/` 放构建、运行命令和运行适配代码。可复用的 Python 策略与模拟器接口在
+`src/spire_ai/`。C++ 战斗搜索在 `native/combat_search/`。训练好的权重和加载配置放在
+`models/`。[模型清单](models/manifest.json)
 
-推理权重放在 `models/`。其中 `.pt` 文件包含模型张量和加载配置，原生战斗模型
-使用 JSON 格式。[模型清单](models/manifest.json)
-
-项目采用 MIT 许可证。第三方说明列出了模拟器依赖和模型训练来源。
+项目采用 MIT 许可证。第三方说明列出了模拟器依赖和人类对局数据来源。
 [许可证](LICENSE) · [第三方说明](THIRD_PARTY_NOTICES.md)

@@ -2,9 +2,9 @@
   "schema_version": 1,
   "repository": "https://github.com/EthanH3514/sts_lightspeed.git",
   "branch": "master",
-  "revision": "a738d336f24ec75c754168b8cefa7ee19ca591d3",
+  "revision": "c9a981402a9e37bca479d9d3d08c28d337d691dd",
   "publication_status": "published",
-  "last_published_revision": "a738d336f24ec75c754168b8cefa7ee19ca591d3",
+  "last_published_revision": "c9a981402a9e37bca479d9d3d08c28d337d691dd",
   "upstream_repository": "https://github.com/gamerpuppy/sts_lightspeed.git",
   "upstream_revision": "7476a81954020087da31d41d16fddf475746ec2d",
   "dependencies": {
