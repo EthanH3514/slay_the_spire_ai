@@ -3,8 +3,9 @@
 ## Current state
 
 This branch packages the round-66 combat weights and generation-15
-outside-combat weights for standalone simulator play. The simulator is pinned
-to the maintained fork at `a738d336f24ec75c754168b8cefa7ee19ca591d3`.
+outside-combat weights for standalone simulator play. The simulator submodule
+and the [simulator lockfile](../src/spire_ai/simulator-lock.json) pin the
+maintained fork.
 The public READMEs describe the training method and results. The full pipeline
 and datasets remain in the development workspace.
 

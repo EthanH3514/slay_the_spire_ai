@@ -2,125 +2,36 @@
 
 English · [简体中文](README.zh-CN.md)
 
-Spire AI is an experimental Slay the Spire agent. The goal is to clear the
-first three acts as the Ironclad at Ascension 10 (A10), with combat decisions
-based only on public information and no save/reload. The release runs in a
-headless simulator and includes the inference code and trained weights for
-combat and decisions between battles. This README describes how the models
-were trained and evaluated. The full training pipeline and datasets are kept
-in the development workspace.
+Spire AI plays Slay the Spire in a headless simulator. It fights battles,
+builds a deck, chooses routes, and handles shops, campfires and events within
+the same run. The research goal is to defeat the Act 3 boss as the Ironclad at
+Ascension 10 (A10), using only what the player can see in combat and playing
+each fight without save/reload.
 
-## Research approach
+This repository includes the simulator runner, decision code and trained
+weights. The full training pipeline and datasets are kept in the development
+workspace.
 
-### How a decision reaches the simulator
+## How far the agent gets
 
-```mermaid
-flowchart TD
-    simulator["Headless simulator"] --> observation["Public state and legal actions"]
-    observation --> decision{"Current decision"}
-    decision -->|Combat| combat["Conditional sampling and PUCT search"]
-    decision -->|Map| route["Route policy"]
-    decision -->|Rewards, shop, campfire| deck["Deck-building policy"]
-    decision -->|Events and boss relics| event["Event search or specialist policy"]
-    combat --> execute["Apply the chosen action or sequence"]
-    route --> execute
-    deck --> execute
-    event --> execute
-    execute --> simulator
-```
+| Simulator test | Result |
+| --- | --- |
+| Full runs on 32 A10 Ironclad seeds | 11 cleared Act 1, 2 reached the Act 2 boss, and 0 cleared Act 2 or won the run |
+| Combat only, starting from 52 fixed battle positions | 38 wins |
 
-### Combat with hidden information
-
-The combat policy takes inspiration from AlphaZero. A learned policy guides
-Monte Carlo tree search, and a learned value model evaluates positions at the
-leaves. We adapt the search to Slay the Spire by sampling outcomes compatible
-with the information available to the player.
-[AlphaZero paper](https://discovery.ucl.ac.uk/id/eprint/10069050/)
-
-1. **Sample hidden states.** The simulator holds the run seed and actual draw
-   order. The search uses observations such as cards already drawn and cards
-   placed on top of or under the draw pile. For supported shuffle and insertion
-   mechanics, the sampler tracks the resulting order constraints and draws
-   from the conditional distribution. When several copies of a card could
-   explain a draw, it accounts for each possibility.
-   [Public input](src/spire_ai/policy_api.py) ·
-   [Conditioning on observed draws](native/combat_search/ObservedDrawPrefix.h)
-2. **Search several decisions ahead.** The C++ search uses PUCT to allocate
-   visits among legal actions, guided by the learned prior and the results so
-   far. Samples with the same public action and observation history share tree
-   statistics. If a simulation ends the fight, the search backs up that
-   outcome. At other leaves, it uses the model's predictions for losses, wins,
-   escapes and the distribution of remaining resources. The resource score
-   combines HP with an approximate value for remaining potions.
-   [Search tree](native/combat_search/StandaloneTree.h) ·
-   [Leaf evaluator](native/combat_search/ValueLeaf.h)
-3. **Act once, then search again.** The agent usually selects the action with
-   the most completed visits and uses outcome and resource estimates to break
-   ties. When the public state proves that a sequence can win while preserving
-   HP and potions, the search can select its first action directly. Each
-   decision has a budget of up to 1,024 simulations and 16,384 simulator steps.
-   The agent searches again from the state it actually observes after acting.
-   [Root selection](scripts/root_recommendation.py) ·
-   [Terminal proof](native/combat_search/TerminalProof.h)
-
-### Training and decisions between battles
-
-- **Combat training.** The action prior learns from search visit counts.
-  To train the value model, a fixed combat policy plays sampled battles to
-  completion and records the outcome and remaining resources. Each training
-  round can revisit stored public positions and recompute their targets
-  with the policy fixed for that round.
-- **Deck building and routing.** Training starts from decisions that could
-  be reconstructed from human run records. The deck-building policy shares
-  one model across card rewards, shops and campfires. A separate route policy
-  samples a legal exit using public run and route information. In joint PPO
-  training, clearing Acts 1, 2 and 3 adds 1, 2 and 3 reward points respectively,
-  so choices made early in the run can learn from later results.
-  [Construction policy](src/spire_ai/construction_policy.py) ·
-  [Route policy](src/spire_ai/route_behavior.py)
-- **Events.** For eligible events with no combat, the simulator can restore
-  the same entry state to compare choices. The deck-building value model
-  scores the public state at the end of each branch. Events that can lead
-  to combat are played straight through.
-  [Event eligibility and search](src/spire_ai/local_event_search.py) ·
-  [Event exit scoring](src/spire_ai/local_event_value.py)
-
-## Research progress and limitations
-
-The table shows results for the released policies on 32 A10 Ironclad seeds.
-
-| Result | Runs |
-| --- | ---: |
-| Cleared Act 1 | 11/32 |
-| Reached the Act 2 boss | 2/32 |
-| Cleared Act 2 | 0/32 |
-| Cleared the ordinary three-act run | 0/32 |
-
-The combat policy performed reasonably well on fixed battle positions,
-winning **38 of 52** fights. Full-run performance is still limited.
-
-I suspect that decisions between battles, especially deck building and
-route choice, are the main bottleneck. That hypothesis still needs a
-controlled comparison. I have limited time to pursue further improvements
-to those policies at the moment.
-
-- **Combat value.** The value model uses a compact public representation.
-  Detailed uncertainty about card order is handled by the sampler, and the
-  value of unused potions is an approximation.
-- **Route evaluation.** We ran 78 continuations from 19 forks late in Act 2,
-  changing the first exit and using fixed policies from then on. At five
-  forks the exit changed how often the agent reached the boss. At just one
-  fork it changed how often the agent won the fight. That left too few
-  examples to train the model that encodes the full reachable map.
-- **Coverage.** Data from the later acts and from decks with well-developed
-  synergies are still sparse. The runner can stop with an error when it
-  encounters a mechanic outside its supported scope.
+The full-run test starts at the opening choice and uses both combat and
+between-battle policies. The combat test starts from prepared battle
+positions and measures combat alone.
+I suspect that decisions between battles, especially deck building and route
+choice, are the main bottleneck. That still needs a controlled comparison.
+I have limited time to pursue that work at the moment.
 
 ## Quick start
 
-The verified setup uses 64-bit Windows, Python 3.11, CPU PyTorch,
-MinGW-w64 GCC 13, CMake 3.27 and Ninja. Add Git, CMake, Ninja and the MinGW
-toolchain to `PATH`. Run the following from the repository root in PowerShell.
+The verified setup uses 64-bit Windows, Python 3.11, CPU PyTorch, MinGW-w64
+GCC 13, CMake 3.27 and Ninja. Add Git, CMake, Ninja and MinGW to `PATH`, then
+run the following from the repository root in PowerShell. The simulator runs
+independently of Steam.
 
 ```powershell
 python -m venv runtime/venv
@@ -128,38 +39,140 @@ $python = "runtime/venv/Scripts/python.exe"
 & $python -m pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
 & $python scripts/build_native.py --jobs 4
 & $python scripts/play.py --max-actions 12
+```
+
+The build reuses the `sts_lightspeed/` submodule when it and its dependencies
+are checked out at the pinned revisions. Run `git submodule update --init --recursive`
+to initialize them. Otherwise the build uses the checkout in `runtime/sts_lightspeed`,
+fetching it when needed. The native module goes into `runtime/native`.
+Pass `--source <path>` to `scripts/build_native.py` to use a specific checkout
+of the pinned source and dependencies.
+[Simulator lockfile](src/spire_ai/simulator-lock.json)
+
+The preview prints one JSON record per action and ends with
+`{"actions": 12, "outcome": "action_limit"}`. To start a full run, use the
+command below. The last record reports the result.
+
+```powershell
 & $python scripts/play.py --seed 20261125
 ```
 
-The build script checks out the simulator fork and its dependencies at the
-pinned versions, then builds the module under `runtime/native`. A checkout
-with matching submodules can also be built offline with
-`scripts/build_native.py --source <path>`. The simulator runs independently
-of Steam. [Simulator lockfile](src/spire_ai/simulator-lock.json)
+## How the agent makes decisions
 
-The 12-action command prints each action and the resulting public-state
-fingerprint as a JSON line, then reports `action_limit`. When a run reaches
-a terminal state, its last line reports the simulator's result.
+```mermaid
+flowchart TD
+    simulator["Headless simulator"] --> observation["Visible game state and legal actions"]
+    observation --> decision{"Current screen"}
+    decision -->|Combat| combat["Sample possible draws and search actions"]
+    decision -->|Map| route["Choose a route"]
+    decision -->|Rewards, shop, campfire| deck["Score deck-building choices"]
+    decision -->|Events and boss relics| event["Compare event outcomes or use a specialist policy"]
+    combat --> execute["Apply the chosen action or sequence"]
+    route --> execute
+    deck --> execute
+    event --> execute
+    execute --> simulator
+```
+
+### Combat
+
+The combat policy takes inspiration from AlphaZero. A learned model guides
+Monte Carlo tree search toward promising moves, and a second model estimates
+the outcome when a simulation stops before the fight ends. Slay the Spire
+adds hidden information, such as which card comes next in the draw pile.
+[AlphaZero paper](https://discovery.ucl.ac.uk/id/eprint/10069050/)
+
+1. **Sample possible futures.** If the top card of the draw pile is known,
+   each sample puts that card on top and varies the unknown cards subject
+   to the other observed constraints. The sampler tracks how supported
+   draw-pile operations change those constraints and accounts for multiple
+   copies of the same card. The hidden draw order and run seed stay private
+   to the simulator. [Public input](src/spire_ai/policy_api.py) ·
+   [Draw-order sampler](native/combat_search/ObservedDrawPrefix.h)
+2. **Try legal moves across those samples.** The C++ search uses PUCT to
+   allocate visits using the model's move suggestions and the results so far.
+   Simulations that produce the same actions and visible outcomes share
+   tree statistics. If a simulation finishes the fight, that result updates
+   the tree. Otherwise the value model estimates win, loss and escape
+   probabilities and how much HP and potion value might remain.
+   [Search tree](native/combat_search/StandaloneTree.h) ·
+   [Value model](native/combat_search/ValueLeaf.h)
+3. **Play one move and look again.** The agent usually plays the move with
+   the most visits, then searches again from what it actually observes.
+   Each decision allows up to 1,024 simulations and 16,384 simulated
+   actions. A shortcut can choose the first move of a sequence that the
+   visible state proves will win while preserving HP and potions.
+   [Move selection](scripts/root_recommendation.py) ·
+   [Proven wins](native/combat_search/TerminalProof.h)
+
+### Between battles
+
+- **Deck building.** A shared model scores choices such as taking or skipping
+  a card reward, buying an item or removing a card at a shop, and resting or
+  upgrading at a campfire. [Deck-building policy](src/spire_ai/construction_policy.py)
+- **Routing.** A separate model uses the current run state and route features
+  to assign a probability to each available exit, then samples one.
+  [Route policy](src/spire_ai/route_behavior.py)
+- **Events.** For eligible events that cannot lead to combat, the simulator
+  replays choices from the exact same entry state, including its random state.
+  The deck-building value model compares the visible results. Events that
+  can lead to combat are played straight through.
+  [Event search](src/spire_ai/local_event_search.py) ·
+  [Event scoring](src/spire_ai/local_event_value.py)
+
+## How the policies were trained
+
+**Combat.** The move model, also called the action prior, learns the
+distribution of visits across legal moves in tree search. The value model
+learns from fights played to completion. A fixed combat policy plays from
+sampled positions, and the result and remaining resources become training
+targets. In later rounds, saved public positions can be reused to generate
+fresh targets for both models with the combat policy fixed for that round.
+
+**Decisions between battles.** The starting policies learn to imitate human
+choices that can be reconstructed from public Slay the Spire run records.
+The agent then collects fresh simulator runs with the combat policy fixed
+and updates the deck-building and route models using PPO (Proximal Policy
+Optimization). Clearing Acts 1, 2 and 3 adds 1, 2 and 3 reward points
+respectively, giving early choices feedback from later in the run.
+[Human run data](THIRD_PARTY_NOTICES.md)
+
+## Limitations and future training
+
+- **Deck building and routing.** I would first use whole-run results to test
+  changes to deck building and routing with combat held fixed. For routing,
+  one direction is to train a model that sees the entire reachable map,
+  including where paths split and rejoin. Playing different exits from the
+  same fork with the subsequent policies held fixed can show how much the
+  initial choice matters.
+- **Combat on later acts and different decks.** Training data from Acts 2
+  and 3 and from decks with developed synergies is sparse. New runs can
+  supply those fights so the combat models learn to use the decks the run
+  policy builds. The current combat value model also approximates the value
+  of remaining potions.
+- **Simulator coverage.** The runner can stop with an error if a run
+  encounters an unsupported mechanic.
+
+To measure progress, compare one policy change at a time on held-out seeds
+with the same combat search budget. Track act clears and three-act wins, and
+use HP loss and potion use to help explain the results.
 
 ## Policy entry points
 
-| Decision | Entry point | What it does |
-| --- | --- | --- |
-| Whole run | [`FrozenPolicy.play`](scripts/play.py) | Dispatches decisions to the frozen policies and advances the simulator. |
-| Combat | [`Combat.choose`](scripts/play.py), [root recommendation](scripts/root_recommendation.py), [native tree](native/combat_search/StandaloneTree.h) | Filters legal actions for potion replacement, runs C++ search, and checks the final recommendation. |
-| Route | [`sample_route`](src/spire_ai/route_behavior.py) | Encodes the public route choice and samples a legal exit from the frozen policy. |
-| Deck building | [`ConstructionPolicy`](src/spire_ai/construction_policy.py) | Builds and scores menus for card rewards, shops and campfires. |
-| Events and boss relics | [event search](src/spire_ai/local_event_search.py), [outside policy dispatch](src/spire_ai/canonical_event_dispatch.py) | Searches eligible pure-choice events and dispatches other event and relic decisions. |
+| Decision | Entry point |
+| --- | --- |
+| Whole run | [`FrozenPolicy.play`](scripts/play.py) |
+| Combat | [`Combat.choose`](scripts/play.py), [C++ search tree](native/combat_search/StandaloneTree.h) |
+| Route | [`sample_route`](src/spire_ai/route_behavior.py) |
+| Deck building | [`ConstructionPolicy`](src/spire_ai/construction_policy.py) |
+| Events and boss relics | [Event search](src/spire_ai/local_event_search.py), [specialist policies](src/spire_ai/canonical_event_dispatch.py) |
 
-`scripts/build_native.py` and `scripts/play.py` are the command-line entry
-points. `scripts/` also contains runtime adapters and validators.
-`src/spire_ai/` contains reusable Python components for policies, the
-simulator environment and public state.
-
-The inference weights are in `models/`. The `.pt` files contain tensors and
-their loading configuration. The native combat models use JSON.
+`scripts/` contains the build and play commands and their runtime adapters.
+`src/spire_ai/` contains reusable Python policies and simulator interfaces.
+`native/combat_search/` contains the C++ combat search. `models/` contains
+the trained weights and their loading configuration.
 [Model manifest](models/manifest.json)
 
-The project uses the MIT license. The third-party notices cover the simulator
-and the sources used to train the models.
+The project uses the MIT license. The third-party notices cover simulator
+dependencies and the source of the human run data.
 [License](LICENSE) · [Third-party notices](THIRD_PARTY_NOTICES.md)
