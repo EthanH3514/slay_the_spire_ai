@@ -8,9 +8,8 @@ the same run. The research goal is to defeat the Act 3 boss as the Ironclad at
 Ascension 10 (A10), using only what the player can see in combat and playing
 each fight without save/reload.
 
-This repository includes the simulator runner, decision code and trained
-weights. The full training pipeline and datasets are kept in the development
-workspace.
+This repository includes the simulator runner, decision code, trained
+weights and a checkpoint for continuing training on fresh simulator games.
 
 ## How far the agent gets
 
@@ -136,6 +135,11 @@ and updates the deck-building and route models using PPO (Proximal Policy
 Optimization). Clearing Acts 1, 2 and 3 adds 1, 2 and 3 reward points
 respectively, giving early choices feedback from later in the run.
 [Human run data](THIRD_PARTY_NOTICES.md)
+
+The public training command can resume the deck-building and route PPO
+training and update the combat prior and value from newly collected fights.
+The guide includes checkpoint and paired evaluation commands.
+[Continue training](docs/training.md)
 
 ## Limitations and future training
 
